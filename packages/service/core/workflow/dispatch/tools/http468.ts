@@ -9,7 +9,7 @@ import {
   SseResponseEventEnum
 } from '@fastgpt/global/core/workflow/runtime/constants';
 import axios from 'axios';
-import { valueTypeFormat } from '../utils';
+import { formatHttpError, valueTypeFormat } from '../utils';
 import { SERVICE_LOCAL_HOST } from '../../../../common/system/tools';
 import { addLog } from '../../../../common/system/log';
 import { DispatchNodeResultType } from '@fastgpt/global/core/workflow/runtime/type';
@@ -33,7 +33,7 @@ type HttpRequestProps = ModuleDispatchProps<{
   [key: string]: any;
 }>;
 type HttpResponse = DispatchNodeResultType<{
-  [NodeOutputKeyEnum.failed]?: boolean;
+  [NodeOutputKeyEnum.error]?: object;
   [key: string]: any;
 }>;
 
@@ -43,8 +43,9 @@ export const dispatchHttp468Request = async (props: HttpRequestProps): Promise<H
   let {
     res,
     detail,
-    appId,
+    app: { _id: appId },
     chatId,
+    stream,
     responseChatItemId,
     variables,
     node: { outputs },
@@ -69,7 +70,7 @@ export const dispatchHttp468Request = async (props: HttpRequestProps): Promise<H
     chatId,
     responseChatItemId,
     ...variables,
-    histories: histories.slice(-10),
+    histories: histories?.slice(-10) || [],
     ...body,
     ...dynamicInput
   };
@@ -131,7 +132,7 @@ export const dispatchHttp468Request = async (props: HttpRequestProps): Promise<H
       results[key] = valueTypeFormat(formatResponse[key], output.valueType);
     }
 
-    if (typeof formatResponse[NodeOutputKeyEnum.answerText] === 'string') {
+    if (stream && typeof formatResponse[NodeOutputKeyEnum.answerText] === 'string') {
       responseWrite({
         res,
         event: detail ? SseResponseEventEnum.fastAnswer : undefined,
@@ -149,16 +150,17 @@ export const dispatchHttp468Request = async (props: HttpRequestProps): Promise<H
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         httpResult: rawResponse
       },
-      [DispatchNodeResponseKeyEnum.toolResponses]: results,
+      [DispatchNodeResponseKeyEnum.toolResponses]:
+        Object.keys(results).length > 0 ? results : rawResponse,
       [NodeOutputKeyEnum.httpRawResponse]: rawResponse,
       ...results
     };
   } catch (error) {
     addLog.error('Http request error', error);
+
     return {
-      [NodeOutputKeyEnum.failed]: true,
+      [NodeOutputKeyEnum.error]: formatHttpError(error),
       [DispatchNodeResponseKeyEnum.nodeResponse]: {
-        totalPoints: 0,
         params: Object.keys(params).length > 0 ? params : undefined,
         body: Object.keys(requestBody).length > 0 ? requestBody : undefined,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
@@ -306,15 +308,4 @@ function removeUndefinedSign(obj: Record<string, any>) {
     }
   }
   return obj;
-}
-function formatHttpError(error: any) {
-  return {
-    message: error?.message,
-    name: error?.name,
-    method: error?.config?.method,
-    baseURL: error?.config?.baseURL,
-    url: error?.config?.url,
-    code: error?.code,
-    status: error?.status
-  };
 }

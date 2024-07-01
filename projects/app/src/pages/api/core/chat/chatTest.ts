@@ -5,18 +5,23 @@ import { SseResponseEventEnum } from '@fastgpt/global/core/workflow/runtime/cons
 import { responseWrite } from '@fastgpt/service/common/response';
 import { pushChatUsage } from '@/service/support/wallet/usage/push';
 import { UsageSourceEnum } from '@fastgpt/global/support/wallet/usage/constants';
-import type { ChatItemType, ChatItemValueItemType } from '@fastgpt/global/core/chat/type';
-import { authApp } from '@fastgpt/service/support/permission/auth/app';
+import type {
+  ChatItemType,
+  ChatItemValueItemType,
+  UserChatItemValueItemType
+} from '@fastgpt/global/core/chat/type';
+import { authApp } from '@fastgpt/service/support/permission/app/auth';
 import { dispatchWorkFlow } from '@fastgpt/service/core/workflow/dispatch';
 import { authCert } from '@fastgpt/service/support/permission/auth/common';
 import { getUserChatInfoAndAuthTeamPoints } from '@/service/support/permission/auth/team';
-import { chatValue2RuntimePrompt } from '@fastgpt/global/core/chat/adapt';
 import { RuntimeEdgeItemType } from '@fastgpt/global/core/workflow/type/edge';
 import { RuntimeNodeItemType } from '@fastgpt/global/core/workflow/runtime/type';
+import { removeEmptyUserInput } from '@fastgpt/global/core/chat/utils';
+import { ReadPermissionVal } from '@fastgpt/global/support/permission/constant';
 
 export type Props = {
   history: ChatItemType[];
-  prompt: ChatItemValueItemType[];
+  prompt: UserChatItemValueItemType[];
   nodes: RuntimeNodeItemType[];
   edges: RuntimeEdgeItemType[];
   variables: Record<string, any>;
@@ -33,7 +38,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.end();
   });
 
-  const {
+  let {
     nodes = [],
     edges = [],
     history = [],
@@ -55,8 +60,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     /* user auth */
-    const [_, { teamId, tmbId }] = await Promise.all([
-      authApp({ req, authToken: true, appId, per: 'r' }),
+    const [{ app }, { teamId, tmbId }] = await Promise.all([
+      authApp({ req, authToken: true, appId, per: ReadPermissionVal }),
       authCert({
         req,
         authToken: true
@@ -66,8 +71,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // auth balance
     const { user } = await getUserChatInfoAndAuthTeamPoints(tmbId);
 
-    const { text, files } = chatValue2RuntimePrompt(prompt);
-
     /* start process */
     const { flowResponses, flowUsages } = await dispatchWorkFlow({
       res,
@@ -75,14 +78,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       teamId,
       tmbId,
       user,
-      appId,
+      app,
       runtimeNodes: nodes,
       runtimeEdges: edges,
-      variables: {
-        ...variables,
-        userChatInput: text
-      },
-      inputFiles: files,
+      variables,
+      query: removeEmptyUserInput(prompt),
       histories: history,
       stream: true,
       detail: true,
@@ -99,6 +99,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       event: SseResponseEventEnum.flowResponses,
       data: JSON.stringify(flowResponses)
     });
+
     res.end();
 
     pushChatUsage({

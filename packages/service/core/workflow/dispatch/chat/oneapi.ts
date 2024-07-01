@@ -25,6 +25,7 @@ import {
 } from '../../../../common/string/tiktoken/index';
 import {
   chats2GPTMessages,
+  chatValue2RuntimePrompt,
   getSystemPrompt,
   GPTMessages2Chats,
   runtimePrompt2ChatsValue
@@ -44,6 +45,7 @@ import { DispatchNodeResponseKeyEnum } from '@fastgpt/global/core/workflow/runti
 import { getHistories } from '../utils';
 import { filterSearchResultsByMaxChars } from '../../utils';
 import { getHistoryPreview } from '@fastgpt/global/core/chat/utils';
+import { addLog } from '../../../../common/system/log';
 
 export type ChatProps = ModuleDispatchProps<
   AIChatNodeProps & {
@@ -66,7 +68,7 @@ export const dispatchChatCompletion = async (props: ChatProps): Promise<ChatResp
     user,
     histories,
     node: { name },
-    inputFiles = [],
+    query,
     params: {
       model,
       temperature = 0,
@@ -80,6 +82,8 @@ export const dispatchChatCompletion = async (props: ChatProps): Promise<ChatResp
       quotePrompt
     }
   } = props;
+  const { files: inputFiles } = chatValue2RuntimePrompt(query);
+
   if (!userChatInput && inputFiles.length === 0) {
     return Promise.reject('Question is empty');
   }
@@ -164,21 +168,19 @@ export const dispatchChatCompletion = async (props: ChatProps): Promise<ChatResp
     })
   );
 
-  const response = await ai.chat.completions.create(
-    {
-      ...modelConstantsData?.defaultConfig,
-      model: modelConstantsData.model,
-      temperature,
-      max_tokens,
-      stream,
-      messages: loadMessages
-    },
-    {
-      headers: {
-        Accept: 'application/json, text/plain, */*'
-      }
+  const requestBody = {
+    ...modelConstantsData?.defaultConfig,
+    model: modelConstantsData.model,
+    temperature,
+    max_tokens,
+    stream,
+    messages: loadMessages
+  };
+  const response = await ai.chat.completions.create(requestBody, {
+    headers: {
+      Accept: 'application/json, text/plain, */*'
     }
-  );
+  });
 
   const { answerText } = await (async () => {
     if (res && stream) {
@@ -186,7 +188,8 @@ export const dispatchChatCompletion = async (props: ChatProps): Promise<ChatResp
       const { answer } = await streamResponse({
         res,
         detail,
-        stream: response
+        stream: response,
+        requestBody
       });
 
       return {
@@ -346,11 +349,13 @@ async function getMaxTokens({
 async function streamResponse({
   res,
   detail,
-  stream
+  stream,
+  requestBody
 }: {
   res: NextApiResponse;
   detail: boolean;
   stream: StreamChatType;
+  requestBody: Record<string, any>;
 }) {
   const write = responseWriteController({
     res,
@@ -375,6 +380,7 @@ async function streamResponse({
   }
 
   if (!answer) {
+    addLog.info(`LLM model response empty`, requestBody);
     return Promise.reject('core.chat.Chat API is error or undefined');
   }
 

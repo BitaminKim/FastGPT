@@ -96,30 +96,32 @@ const Layout = ({ children }: { children: JSX.Element }) => {
         )}
         {isPc === false && (
           <>
-            <Box h={'100%'} display={['block', 'none']}>
-              {phoneUnShowLayoutRoute[router.pathname] || isChatPage ? (
-                <Auth>{children}</Auth>
-              ) : (
-                <Flex h={'100%'} flexDirection={'column'}>
-                  <Box flex={'1 0 0'} h={0}>
-                    <Auth>{children}</Auth>
-                  </Box>
-                  <Box h={'50px'} borderTop={'1px solid rgba(0,0,0,0.1)'}>
-                    <NavbarPhone unread={unread} />
-                  </Box>
-                </Flex>
-              )}
-            </Box>
+            {phoneUnShowLayoutRoute[router.pathname] || isChatPage ? (
+              <Auth>{children}</Auth>
+            ) : (
+              <Flex h={'100%'} flexDirection={'column'}>
+                <Box flex={'1 0 0'} h={0}>
+                  <Auth>{children}</Auth>
+                </Box>
+                <Box h={'50px'} borderTop={'1px solid rgba(0,0,0,0.1)'}>
+                  <NavbarPhone unread={unread} />
+                </Box>
+              </Flex>
+            )}
           </>
         )}
-
-        {!!userInfo && <UpdateInviteModal />}
-        {isNotSufficientModal && !isHideNavbar && <NotSufficientModal />}
-        {!!userInfo && <SystemMsgModal />}
-        {!!userInfo && importantInforms.length > 0 && (
-          <ImportantInform informs={importantInforms} refetch={refetchUnRead} />
-        )}
       </Box>
+      {feConfigs?.isPlus && (
+        <>
+          {!!userInfo && <UpdateInviteModal />}
+          {isNotSufficientModal && <NotSufficientModal />}
+          {!!userInfo && <SystemMsgModal />}
+          {!!userInfo && importantInforms.length > 0 && (
+            <ImportantInform informs={importantInforms} refetch={refetchUnRead} />
+          )}
+        </>
+      )}
+
       <Loading loading={loading} zIndex={999999} />
     </>
   );

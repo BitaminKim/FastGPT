@@ -1,13 +1,15 @@
-/** @type {import('next').NextConfig} */
 const { i18n } = require('./next-i18next.config');
 const path = require('path');
 
+const isDev = process.env.NODE_ENV === 'development';
+
+/** @type {import('next').NextConfig} */
 const nextConfig = {
   i18n,
   output: 'standalone',
-  reactStrictMode: process.env.NODE_ENV === 'development' ? false : true,
+  reactStrictMode: isDev ? false : true,
   compress: true,
-  webpack(config, { isServer }) {
+  webpack(config, { isServer, nextRuntime }) {
     Object.assign(config.resolve.alias, {
       '@mongodb-js/zstd': false,
       '@aws-sdk/credential-providers': false,
@@ -26,19 +28,24 @@ const nextConfig = {
           test: /\.svg$/i,
           issuer: /\.[jt]sx?$/,
           use: ['@svgr/webpack']
+        },
+        {
+          test: /\.node$/,
+          use: [{ loader: 'nextjs-node-loader' }]
         }
       ]),
       exprContextCritical: false,
       unknownContextCritical: false
     };
 
+    if (!config.externals) {
+      config.externals = [];
+    }
+
     if (isServer) {
-      config.externals.push('isolated-vm');
-      config.externals.push('worker_threads');
+      // config.externals.push('@zilliz/milvus2-sdk-node');
 
-      if (config.name === 'server') {
-        // config.output.globalObject = 'self';
-
+      if (nextRuntime === 'nodejs') {
         const oldEntry = config.entry;
         config = {
           ...config,
@@ -48,11 +55,15 @@ const nextConfig = {
               ...entries,
               'worker/htmlStr2Md': path.resolve(
                 process.cwd(),
-                '../../packages/service/worker/htmlStr2Md.ts'
+                '../../packages/service/worker/htmlStr2Md/index.ts'
               ),
               'worker/countGptMessagesTokens': path.resolve(
                 process.cwd(),
                 '../../packages/service/worker/tiktoken/countGptMessagesTokens.ts'
+              ),
+              'worker/readFile': path.resolve(
+                process.cwd(),
+                '../../packages/service/worker/file/read.ts'
               )
             };
           }
@@ -66,16 +77,24 @@ const nextConfig = {
           fs: false
         }
       };
-      if (!config.externals) {
-        config.externals = [];
-      }
     }
+
+    config.experiments = {
+      asyncWebAssembly: true,
+      layers: true
+    };
 
     return config;
   },
-  transpilePackages: ['@fastgpt/*'],
+  transpilePackages: ['@fastgpt/*', 'ahooks'],
   experimental: {
-    serverComponentsExternalPackages: ['mongoose', 'pg'],
+    // 优化 Server Components 的构建和运行，避免不必要的客户端打包。
+    serverComponentsExternalPackages: [
+      'mongoose',
+      'pg',
+      '@node-rs/jieba',
+      '@zilliz/milvus2-sdk-node'
+    ],
     outputFileTracingRoot: path.join(__dirname, '../../')
   }
 };

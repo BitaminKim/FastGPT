@@ -18,15 +18,13 @@ import { PluginOutputModule } from './system/pluginOutput';
 import { RunPluginModule } from './system/runPlugin';
 import { AiQueryExtension } from './system/queryExtension';
 
-import type { FlowNodeTemplateType, nodeTemplateListType } from '../type';
-import { FlowNodeTemplateTypeEnum } from '../../workflow/constants';
-import { lafModule } from './system/laf';
-import { ifElseNode } from './system/ifElse/index';
+import type { FlowNodeTemplateType } from '../type';
+import { LafModule } from './system/laf';
+import { IfElseNode } from './system/ifElse/index';
+import { VariableUpdateNode } from './system/variableUpdate';
+import { CodeNode } from './system/sandbox';
 
-/* app flow module templates */
-export const appSystemModuleTemplates: FlowNodeTemplateType[] = [
-  SystemConfigNode,
-  WorkflowStart,
+const systemNodes: FlowNodeTemplateType[] = [
   AiChatModule,
   AssignedAnswerModule,
   DatasetSearchModule,
@@ -38,86 +36,31 @@ export const appSystemModuleTemplates: FlowNodeTemplateType[] = [
   ContextExtractModule,
   HttpModule468,
   AiQueryExtension,
-  lafModule,
-  ifElseNode
+  LafModule,
+  IfElseNode,
+  VariableUpdateNode,
+  CodeNode
+];
+/* app flow module templates */
+export const appSystemModuleTemplates: FlowNodeTemplateType[] = [
+  SystemConfigNode,
+  WorkflowStart,
+  ...systemNodes
 ];
 /* plugin flow module templates */
 export const pluginSystemModuleTemplates: FlowNodeTemplateType[] = [
   PluginInputModule,
   PluginOutputModule,
-  AiChatModule,
-  AssignedAnswerModule,
-  DatasetSearchModule,
-  DatasetConcatModule,
-  RunAppModule,
-  ToolModule,
-  StopToolNode,
-  ClassifyQuestionModule,
-  ContextExtractModule,
-  HttpModule468,
-  AiQueryExtension,
-  lafModule,
-  ifElseNode
+  ...systemNodes
 ];
 
 /* all module */
 export const moduleTemplatesFlat: FlowNodeTemplateType[] = [
+  ...systemNodes,
   EmptyNode,
   SystemConfigNode,
   WorkflowStart,
-  AiChatModule,
-  DatasetSearchModule,
-  DatasetConcatModule,
-  AssignedAnswerModule,
-  ClassifyQuestionModule,
-  ContextExtractModule,
-  HttpModule468,
-  ToolModule,
-  StopToolNode,
-  AiChatModule,
-  RunAppModule,
   PluginInputModule,
   PluginOutputModule,
-  RunPluginModule,
-  AiQueryExtension,
-  lafModule,
-  ifElseNode
-];
-
-export const moduleTemplatesList: nodeTemplateListType = [
-  {
-    type: FlowNodeTemplateTypeEnum.systemInput,
-    label: 'core.module.template.System input module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.textAnswer,
-    label: 'core.module.template.Response module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.functionCall,
-    label: 'core.module.template.Function module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.tools,
-    label: 'core.module.template.Tool module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.externalCall,
-    label: 'core.module.template.External module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.personalPlugin,
-    label: '',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.other,
-    label: '其他',
-    list: []
-  }
+  RunPluginModule
 ];

@@ -20,14 +20,18 @@ import { RuntimeNodeItemType } from '../runtime/type';
 import { PluginTypeEnum } from '../../plugin/constants';
 import { RuntimeEdgeItemType, StoreEdgeItemType } from './edge';
 import { NextApiResponse } from 'next';
+import { AppDetailType, AppSchema } from '../../app/type';
+import { ParentIdType } from 'common/parentFolder/type';
+import { AppTypeEnum } from 'core/app/constants';
 
 export type FlowNodeCommonType = {
-  flowNodeType: `${FlowNodeTypeEnum}`; // render node card
+  flowNodeType: FlowNodeTypeEnum; // render node card
 
   avatar?: string;
   name: string;
   intro?: string; // template list intro
   showStatus?: boolean; // chatting response step status
+  version: string;
 
   // data
   inputs: FlowNodeInputItemType[];
@@ -35,12 +39,12 @@ export type FlowNodeCommonType = {
 
   // plugin data
   pluginId?: string;
-  pluginType?: `${PluginTypeEnum}`;
-  parentId?: string;
+  pluginType?: AppTypeEnum;
+  // parentId: ParentIdType;
 };
 
 export type FlowNodeTemplateType = FlowNodeCommonType & {
-  id: string; // module id, unique
+  id: string; // node id, unique
   templateType: `${FlowNodeTemplateTypeEnum}`;
 
   // show handle
@@ -103,8 +107,8 @@ export type NodeSourceNodeItemType = {
 /* --------------- function type -------------------- */
 export type SelectAppItemType = {
   id: string;
-  name: string;
-  logo: string;
+  // name: string;
+  // logo?: string;
 };
 
 /* agent */
@@ -113,6 +117,7 @@ export type ClassifyQuestionAgentItemType = {
   key: string;
 };
 export type ContextExtractAgentItemType = {
+  valueType: 'string' | 'number' | 'boolean';
   desc: string;
   key: string;
   required: boolean;
@@ -128,15 +133,16 @@ export type ChatDispatchProps = {
   teamId: string;
   tmbId: string;
   user: UserModelSchema;
-  appId?: string;
+  app: AppDetailType | AppSchema;
   chatId?: string;
   responseChatItemId?: string;
   histories: ChatItemType[];
-  variables: Record<string, any>;
-  inputFiles?: UserChatItemValueItemType['file'][];
+  variables: Record<string, any>; // global variable
+  query: UserChatItemValueItemType[]; // trigger query
   stream: boolean;
   detail: boolean; // response detail
   maxRunTimes: number;
+  isToolCall?: boolean;
 };
 
 export type ModuleDispatchProps<T> = ChatDispatchProps & {

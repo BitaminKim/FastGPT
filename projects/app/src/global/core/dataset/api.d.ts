@@ -1,6 +1,7 @@
 import { PushDatasetDataChunkProps } from '@fastgpt/global/core/dataset/api';
 import {
   DatasetSearchModeEnum,
+  DatasetSourceReadTypeEnum,
   DatasetTypeEnum,
   ImportDataSourceEnum,
   TrainingModeEnum
@@ -10,16 +11,23 @@ import {
   SearchDataResponseItemType
 } from '@fastgpt/global/core/dataset/type';
 import { NodeInputKeyEnum } from '@fastgpt/global/core/workflow/constants';
+import { PermissionValueType } from '@fastgpt/global/support/permission/type';
 
 /* ================= dataset ===================== */
 export type CreateDatasetParams = {
   parentId?: string;
-  type: `${DatasetTypeEnum}`;
+  type: DatasetTypeEnum;
   name: string;
   intro: string;
   avatar: string;
   vectorModel?: string;
   agentModel?: string;
+  defaultPermission?: PermissionValueType;
+};
+
+export type RebuildEmbeddingProps = {
+  datasetId: string;
+  vectorModel: string;
 };
 
 /* ================= collection ===================== */
@@ -66,26 +74,7 @@ export type SearchTestResponse = {
   searchMode: `${DatasetSearchModeEnum}`;
   usingReRank: boolean;
   similarity: number;
-  usingQueryExtension: boolean;
+  queryExtensionModel?: string;
 };
 
 /* =========== training =========== */
-export type PostPreviewFilesChunksProps = {
-  type: `${ImportDataSourceEnum}`;
-  sourceId: string;
-  chunkSize: number;
-  overlapRatio: number;
-  customSplitChar?: string;
-};
-
-export type PostPreviewFilesChunksResponse = {
-  fileId: string;
-  rawTextLength: number;
-  chunks: string[];
-}[];
-export type PostPreviewTableChunksResponse = {
-  fileId: string;
-  totalChunks: number;
-  chunks: { q: string; a: string; chunkIndex: number }[];
-  errorText?: string;
-}[];

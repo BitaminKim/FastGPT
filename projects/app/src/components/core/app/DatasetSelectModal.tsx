@@ -13,7 +13,7 @@ import {
 import Avatar from '@/components/Avatar';
 import type { SelectedDatasetType } from '@fastgpt/global/core/workflow/api.d';
 import { useToast } from '@fastgpt/web/hooks/useToast';
-import MyTooltip from '@/components/MyTooltip';
+import MyTooltip from '@fastgpt/web/components/common/MyTooltip';
 import MyIcon from '@fastgpt/web/components/common/Icon';
 import { DatasetTypeEnum } from '@fastgpt/global/core/dataset/constants';
 import { useTranslation } from 'next-i18next';
@@ -85,7 +85,7 @@ export const DatasetSelectModal = ({
                     bg={'primary.200'}
                   >
                     <Flex alignItems={'center'} h={'38px'}>
-                      <Avatar src={item.avatar} w={['24px', '28px']}></Avatar>
+                      <Avatar src={item.avatar} w={['1.25rem', '1.75rem']}></Avatar>
                       <Box flex={'1 0 0'} w={0} className="textEllipsis" mx={3}>
                         {item.name}
                       </Box>
@@ -96,7 +96,7 @@ export const DatasetSelectModal = ({
                         _hover={{ color: 'red.500' }}
                         onClick={() => {
                           setSelectedDatasets((state) =>
-                            state.filter((kb) => kb.datasetId !== item._id)
+                            state.filter((dataset) => dataset.datasetId !== item._id)
                           );
                         }}
                       />
@@ -141,7 +141,9 @@ export const DatasetSelectModal = ({
                         if (item.type === DatasetTypeEnum.folder) {
                           setParentId(item._id);
                         } else {
-                          const vectorModel = selectedDatasets[0]?.vectorModel?.model;
+                          const vectorModel = datasets.find(
+                            (dataset) => dataset._id === selectedDatasets[0]?.datasetId
+                          )?.vectorModel?.model;
 
                           if (vectorModel && vectorModel !== item.vectorModel.model) {
                             return toast({
@@ -149,10 +151,7 @@ export const DatasetSelectModal = ({
                               title: t('dataset.Select Dataset Tips')
                             });
                           }
-                          setSelectedDatasets((state) => [
-                            ...state,
-                            { datasetId: item._id, vectorModel: item.vectorModel }
-                          ]);
+                          setSelectedDatasets((state) => [...state, { datasetId: item._id }]);
                         }
                       }}
                     >
@@ -163,8 +162,8 @@ export const DatasetSelectModal = ({
                           w={0}
                           className="textEllipsis"
                           ml={3}
-                          fontWeight={'bold'}
-                          fontSize={['md', 'lg', 'xl']}
+                          fontSize={'md'}
+                          color={'myGray.900'}
                         >
                           {item.name}
                         </Box>

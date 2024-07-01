@@ -13,9 +13,26 @@ import {
 import { EmptyNode } from '@fastgpt/global/core/workflow/template/system/emptyNode';
 import { StoreEdgeItemType } from '@fastgpt/global/core/workflow/type/edge';
 import { getNanoid } from '@fastgpt/global/common/string/tools';
-import { systemConfigNode2VariableNode } from './adapt';
-import { VARIABLE_NODE_ID } from './constants';
+import { getGlobalVariableNode } from './adapt';
+import { VARIABLE_NODE_ID, WorkflowIOValueTypeEnum } from '@fastgpt/global/core/workflow/constants';
 import { NodeInputKeyEnum, NodeOutputKeyEnum } from '@fastgpt/global/core/workflow/constants';
+import { EditorVariablePickerType } from '@fastgpt/web/components/common/Textarea/PromptEditor/type';
+import {
+  formatEditorVariablePickerIcon,
+  getAppChatConfig,
+  getGuideModule
+} from '@fastgpt/global/core/workflow/utils';
+import { getSystemVariables } from '../app/utils';
+import { TFunction } from 'next-i18next';
+import {
+  FlowNodeInputItemType,
+  FlowNodeOutputItemType,
+  ReferenceValueProps
+} from '@fastgpt/global/core/workflow/type/io';
+import { IfElseListItemType } from '@fastgpt/global/core/workflow/template/system/ifElse/type';
+import { VariableConditionEnum } from '@fastgpt/global/core/workflow/template/system/ifElse/constant';
+import { AppChatConfigType } from '@fastgpt/global/core/app/type';
+import { cloneDeep, isEqual } from 'lodash';
 
 export const nodeTemplate2FlowNode = ({
   template,
@@ -41,9 +58,11 @@ export const nodeTemplate2FlowNode = ({
   };
 };
 export const storeNode2FlowNode = ({
-  item: storeNode
+  item: storeNode,
+  selected = false
 }: {
   item: StoreNodeItemType;
+  selected?: boolean;
 }): Node<FlowNodeItemType> => {
   // init some static data
   const template =
@@ -76,13 +95,15 @@ export const storeNode2FlowNode = ({
         ...templateOutput,
         value: storeOutput.value
       };
-    })
+    }),
+    version: storeNode.version || '481'
   };
 
   return {
     id: storeNode.nodeId,
     type: storeNode.flowNodeType,
     data: moduleItem,
+    selected,
     position: storeNode.position || { x: 0, y: 0 }
   };
 };
@@ -97,11 +118,15 @@ export const storeEdgesRenderEdge = ({ edge }: { edge: StoreEdgeItemType }) => {
 export const computedNodeInputReference = ({
   nodeId,
   nodes,
-  edges
+  edges,
+  chatConfig,
+  t
 }: {
   nodeId: string;
   nodes: FlowNodeItemType[];
   edges: Edge[];
+  chatConfig: AppChatConfigType;
+  t: TFunction;
 }) => {
   // get current node
   const node = nodes.find((item) => item.nodeId === nodeId);
@@ -126,16 +151,55 @@ export const computedNodeInputReference = ({
   };
   findSourceNode(nodeId);
 
-  // add system config node
-  const systemConfigNode = nodes.find(
-    (item) => item.flowNodeType === FlowNodeTypeEnum.systemConfig
+  sourceNodes.unshift(
+    getGlobalVariableNode({
+      nodes,
+      t,
+      chatConfig
+    })
   );
 
-  if (systemConfigNode) {
-    sourceNodes.unshift(systemConfigNode2VariableNode(systemConfigNode));
+  return sourceNodes;
+};
+export const getRefData = ({
+  variable,
+  nodeList,
+  chatConfig,
+  t
+}: {
+  variable?: ReferenceValueProps;
+  nodeList: FlowNodeItemType[];
+  chatConfig: AppChatConfigType;
+  t: TFunction;
+}) => {
+  if (!variable)
+    return {
+      valueType: WorkflowIOValueTypeEnum.any,
+      required: false
+    };
+
+  const node = nodeList.find((node) => node.nodeId === variable[0]);
+  const systemVariables = getWorkflowGlobalVariables({ nodes: nodeList, chatConfig, t });
+
+  if (!node) {
+    const globalVariable = systemVariables.find((item) => item.key === variable?.[1]);
+    return {
+      valueType: globalVariable?.valueType || WorkflowIOValueTypeEnum.any,
+      required: !!globalVariable?.required
+    };
   }
 
-  return sourceNodes;
+  const output = node.outputs.find((item) => item.id === variable[1]);
+  if (!output)
+    return {
+      valueType: WorkflowIOValueTypeEnum.any,
+      required: false
+    };
+
+  return {
+    valueType: output.valueType,
+    required: !!output.required
+  };
 };
 
 /* Connection rules */
@@ -162,6 +226,29 @@ export const checkWorkflowNodeAndConnection = ({
       data.flowNodeType === FlowNodeTypeEnum.workflowStart
     ) {
       continue;
+    }
+
+    if (data.flowNodeType === FlowNodeTypeEnum.ifElseNode) {
+      const ifElseList: IfElseListItemType[] = inputs.find(
+        (input) => input.key === NodeInputKeyEnum.ifElseList
+      )?.value;
+      if (
+        ifElseList.some((item) => {
+          return item.list.some((listItem) => {
+            return (
+              listItem.variable === undefined ||
+              listItem.condition === undefined ||
+              (listItem.value === undefined &&
+                listItem.condition !== VariableConditionEnum.isEmpty &&
+                listItem.condition !== VariableConditionEnum.isNotEmpty)
+            );
+          });
+        })
+      ) {
+        return [data.nodeId];
+      } else {
+        continue;
+      }
     }
 
     // check node input
@@ -231,4 +318,147 @@ export const filterSensitiveNodesData = (nodes: StoreNodeItemType[]) => {
     return node;
   });
   return cloneNodes;
+};
+
+/* get workflowStart output to global variables */
+export const getWorkflowGlobalVariables = ({
+  nodes,
+  chatConfig,
+  t
+}: {
+  nodes: FlowNodeItemType[];
+  chatConfig: AppChatConfigType;
+  t: TFunction;
+}): EditorVariablePickerType[] => {
+  const globalVariables = formatEditorVariablePickerIcon(
+    getAppChatConfig({
+      chatConfig,
+      systemConfigNode: getGuideModule(nodes),
+      isPublicFetch: true
+    })?.variables || []
+  ).map((item) => ({
+    ...item,
+    valueType: WorkflowIOValueTypeEnum.any
+  }));
+
+  const systemVariables = getSystemVariables(t);
+
+  return [...globalVariables, ...systemVariables];
+};
+
+export type CombinedItemType = Partial<FlowNodeInputItemType> & Partial<FlowNodeOutputItemType>;
+
+export const updateFlowNodeVersion = (
+  node: FlowNodeItemType,
+  template: FlowNodeTemplateType
+): FlowNodeItemType => {
+  function updateArrayBasedOnTemplate<T extends FlowNodeInputItemType | FlowNodeOutputItemType>(
+    nodeArray: T[],
+    templateArray: T[]
+  ): T[] {
+    return templateArray.map((templateItem) => {
+      const nodeItem = nodeArray.find((item) => item.key === templateItem.key);
+      if (nodeItem) {
+        return { ...templateItem, ...nodeItem } as T;
+      }
+      return { ...templateItem };
+    });
+  }
+
+  const updatedNode: FlowNodeItemType = {
+    ...node,
+    ...template,
+    name: node.name,
+    intro: node.intro
+  };
+
+  if (node.inputs && template.inputs) {
+    updatedNode.inputs = updateArrayBasedOnTemplate(node.inputs, template.inputs);
+  }
+  if (node.outputs && template.outputs) {
+    updatedNode.outputs = updateArrayBasedOnTemplate(node.outputs, template.outputs);
+  }
+
+  return updatedNode;
+};
+
+type WorkflowType = {
+  nodes: StoreNodeItemType[];
+  edges: StoreEdgeItemType[];
+  chatConfig: AppChatConfigType;
+};
+export const compareWorkflow = (workflow1: WorkflowType, workflow2: WorkflowType) => {
+  const clone1 = cloneDeep(workflow1);
+  const clone2 = cloneDeep(workflow2);
+
+  if (!isEqual(clone1.edges, clone2.edges)) {
+    console.log('Edge not equal');
+    return false;
+  }
+
+  if (
+    clone1.chatConfig &&
+    clone2.chatConfig &&
+    !isEqual(
+      {
+        welcomeText: clone1.chatConfig?.welcomeText || '',
+        variables: clone1.chatConfig?.variables || [],
+        questionGuide: clone1.chatConfig?.questionGuide || false,
+        ttsConfig: clone1.chatConfig?.ttsConfig || undefined,
+        whisperConfig: clone1.chatConfig?.whisperConfig || undefined,
+        scheduledTriggerConfig: clone1.chatConfig?.scheduledTriggerConfig || undefined,
+        chatInputGuide: clone1.chatConfig?.chatInputGuide || undefined
+      },
+      {
+        welcomeText: clone2.chatConfig?.welcomeText || '',
+        variables: clone2.chatConfig?.variables || [],
+        questionGuide: clone2.chatConfig?.questionGuide || false,
+        ttsConfig: clone2.chatConfig?.ttsConfig || undefined,
+        whisperConfig: clone2.chatConfig?.whisperConfig || undefined,
+        scheduledTriggerConfig: clone2.chatConfig?.scheduledTriggerConfig || undefined,
+        chatInputGuide: clone2.chatConfig?.chatInputGuide || undefined
+      }
+    )
+  ) {
+    console.log('chatConfig not equal');
+    return false;
+  }
+
+  const node1 = clone1.nodes.filter(Boolean).map((node) => ({
+    flowNodeType: node.flowNodeType,
+    inputs: node.inputs.map((input) => ({
+      ...input,
+      value: input.value ?? undefined
+    })),
+    outputs: node.outputs.map((input) => ({
+      ...input,
+      value: input.value ?? undefined
+    })),
+    name: node.name,
+    intro: node.intro,
+    avatar: node.avatar,
+    version: node.version,
+    position: node.position
+  }));
+  const node2 = clone2.nodes.filter(Boolean).map((node) => ({
+    flowNodeType: node.flowNodeType,
+    inputs: node.inputs.map((input) => ({
+      ...input,
+      value: input.value ?? undefined
+    })),
+    outputs: node.outputs.map((input) => ({
+      ...input,
+      value: input.value ?? undefined
+    })),
+    name: node.name,
+    intro: node.intro,
+    avatar: node.avatar,
+    version: node.version,
+    position: node.position
+  }));
+
+  // console.log(node1);
+  // console.log(node2);
+
+  return isEqual(node1, node2);
 };
