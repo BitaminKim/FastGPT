@@ -1,87 +1,89 @@
-import type { NextApiRequest, NextApiResponse } from 'next';
+import { NextAPI } from '@/service/middleware/entry';
+import { authChatTargetCrud } from '@fastgpt/service/core/chat/auth';
+import {
+  assertMemberRateLimit,
+  MemberRateLimitPolicy
+} from '@fastgpt/service/common/rateLimit/interface/member';
 import { jsonRes } from '@fastgpt/service/common/response';
-import { withNextCors } from '@fastgpt/service/common/middle/cors';
-import { getUploadModel } from '@fastgpt/service/common/file/multer';
-import { removeFilesByPaths } from '@fastgpt/service/common/file/utils';
-import fs from 'fs';
-import { getAIApi } from '@fastgpt/service/core/ai/config';
-import { pushWhisperUsage } from '@/service/support/wallet/usage/push';
-import { authChatCert } from '@/service/support/permission/auth/chat';
-import { MongoApp } from '@fastgpt/service/core/app/schema';
-import { getGuideModule, splitGuideModule } from '@fastgpt/global/core/workflow/utils';
-import { OutLinkChatAuthProps } from '@fastgpt/global/support/permission/chat';
+import { aiTranscriptions } from '@fastgpt/service/core/ai/audio/transcriptions';
+import { getSystemModelHandle } from '@fastgpt/service/core/ai/model/catalog/service';
+import { pushWhisperUsage } from '@fastgpt/service/support/wallet/usage/controller';
+import type { NextApiRequest, NextApiResponse } from 'next';
 
-const upload = getUploadModel({
-  maxSize: 2
-});
+import { ERROR_ENUM } from '@fastgpt/global/common/error/errorCode';
+import { AudioTranscriptionsDataSchema } from '@fastgpt/global/openapi/core/chat/record/api';
+import { UsageSourceEnum } from '@fastgpt/global/support/wallet/usage/constants';
+import { multer } from '@fastgpt/service/common/file/multer';
+import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
 
-export default withNextCors(async function handler(req: NextApiRequest, res: NextApiResponse<any>) {
-  let filePaths: string[] = [];
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const filepaths: string[] = [];
 
   try {
+    const result = await multer.resolveFormData({ request: req });
+    filepaths.push(result.fileMetadata.path);
     const {
-      file,
-      data: { appId, duration, shareId, outLinkUid, teamId: spaceTeamId, teamToken }
-    } = await upload.doUpload<
-      OutLinkChatAuthProps & {
-        appId: string;
-        duration: number;
-      }
-    >(req, res);
+      sourceType,
+      sourceId,
+      chatId,
+      duration: rawDuration,
+      outLinkAuthData
+    } = parseApiInput({
+      req: { body: result.data },
+      bodySchema: AudioTranscriptionsDataSchema
+    }).body;
 
-    req.body.shareId = shareId;
-    req.body.outLinkUid = outLinkUid;
-    req.body.teamId = spaceTeamId;
-    req.body.teamToken = teamToken;
-
-    filePaths = [file.path];
-
-    if (!global.whisperModel) {
-      throw new Error('whisper model not found');
-    }
-
-    if (!file) {
+    if (!result.fileMetadata) {
       throw new Error('file not found');
     }
-
-    // auth role
-    const { teamId, tmbId } = await authChatCert({ req, authToken: true });
-    // auth app
-    const app = await MongoApp.findById(appId, 'modules').lean();
-    if (!app) {
-      throw new Error('app not found');
+    if (rawDuration === undefined) {
+      throw new Error('duration not found');
     }
-    const { whisperConfig } = splitGuideModule(getGuideModule(app?.modules));
-    if (!whisperConfig?.open) {
-      throw new Error('Whisper is not open in the app');
-    }
+    const duration = rawDuration < 1 ? 1 : rawDuration;
 
-    const ai = getAIApi();
-
-    const result = await ai.audio.transcriptions.create({
-      file: fs.createReadStream(file.path),
-      model: global.whisperModel.model
+    const { teamId, tmbId } = await authChatTargetCrud({
+      req,
+      authToken: true,
+      sourceType,
+      sourceId,
+      chatId,
+      outLinkAuthData
+    });
+    await assertMemberRateLimit({
+      policy: MemberRateLimitPolicy.Transcriptions,
+      memberId: String(tmbId)
+    });
+    const modelHandle = await getSystemModelHandle();
+    const transcriptionsResult = await aiTranscriptions({
+      model: modelHandle.getDefaultModelData('stt'),
+      fileStream: result.getReadStream(),
+      filename: result.fileMetadata.originalname
     });
 
-    pushWhisperUsage({
+    await pushWhisperUsage({
       teamId,
       tmbId,
-      duration
+      duration: transcriptionsResult?.usage?.total_tokens || duration,
+      source: UsageSourceEnum.fastgpt
     });
 
     jsonRes(res, {
-      data: result.text
+      data: transcriptionsResult.text
     });
   } catch (err) {
-    console.log(err);
+    if (err === ERROR_ENUM.tooManyRequest) {
+      throw err;
+    }
     jsonRes(res, {
       code: 500,
       error: err
     });
+  } finally {
+    multer.clearDiskTempFiles(filepaths);
   }
+}
 
-  removeFilesByPaths(filePaths);
-});
+export default NextAPI(handler);
 
 export const config = {
   api: {

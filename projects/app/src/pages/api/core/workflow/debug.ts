@@ -1,96 +1,149 @@
+import { createWorkflowResourceContext } from '@fastgpt/service/core/workflow/resource/context';
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { connectToDatabase } from '@/service/mongo';
-import { jsonRes } from '@fastgpt/service/common/response';
-import { pushChatUsage } from '@/service/support/wallet/usage/push';
 import { UsageSourceEnum } from '@fastgpt/global/support/wallet/usage/constants';
-import { authApp } from '@fastgpt/service/support/permission/auth/app';
+import { authApp } from '@fastgpt/service/support/permission/app/auth';
 import { dispatchWorkFlow } from '@fastgpt/service/core/workflow/dispatch';
+import { prepareWorkflowFileQuery } from '@fastgpt/service/core/workflow/utils/fileLimits';
 import { authCert } from '@fastgpt/service/support/permission/auth/common';
-import { getUserChatInfoAndAuthTeamPoints } from '@/service/support/permission/auth/team';
-import { PostWorkflowDebugProps, PostWorkflowDebugResponse } from '@/global/core/workflow/api';
-import { authPluginCrud } from '@fastgpt/service/support/permission/auth/plugin';
+import { getRunningUserInfoByTmbId } from '@fastgpt/service/support/user/team/utils';
+import { NextAPI } from '@/service/middleware/entry';
+import { WritePermissionVal } from '@fastgpt/global/support/permission/constant';
+import { WORKFLOW_MAX_RUN_TIMES } from '@fastgpt/service/core/workflow/constants';
+import { getLastInteractiveValue } from '@fastgpt/global/core/workflow/runtime/utils';
+import { getLocale } from '@fastgpt/service/common/middle/i18n';
+import { createChatUsageRecord } from '@fastgpt/service/support/wallet/usage/controller';
+import { getNanoid } from '@fastgpt/global/common/string/tools';
+import { parseApiInput } from '@fastgpt/service/common/zod/requestParseError';
+import {
+  WorkflowDebugBodySchema,
+  WorkflowDebugResponseSchema,
+  type WorkflowDebugResponse
+} from '@fastgpt/global/openapi/core/workflow/api';
+import {
+  composeDebugNodeResponseMap,
+  getWorkflowFinalResponseData
+} from '@/service/core/workflow/nodeResponse';
+import { ChatSourceTypeEnum } from '@fastgpt/global/core/chat/constants';
+import { prepareAppWorkflowResources } from '@fastgpt/service/core/app/resource/service';
+import { getAppDraftWorkflow } from '@fastgpt/service/core/app/version/controller';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse): Promise<WorkflowDebugResponse> {
   const {
     nodes = [],
     edges = [],
+    skipNodeQueue,
     variables = {},
     appId,
-    pluginId
-  } = req.body as PostWorkflowDebugProps;
-  try {
-    await connectToDatabase();
-    if (!nodes) {
-      throw new Error('Prams Error');
-    }
-    if (!Array.isArray(nodes)) {
-      throw new Error('Nodes is not array');
-    }
-    if (!Array.isArray(edges)) {
-      throw new Error('Edges is not array');
-    }
+    query = [],
+    history = [],
+    chatConfig,
+    usageId,
+    chatId: debugChatId
+  } = parseApiInput({ req, bodySchema: WorkflowDebugBodySchema }).body;
 
-    /* user auth */
-    const [{ teamId, tmbId }] = await Promise.all([
-      authCert({
-        req,
-        authToken: true
-      }),
-      appId && authApp({ req, authToken: true, appId, per: 'r' }),
-      pluginId && authPluginCrud({ req, authToken: true, pluginId, per: 'r' })
-    ]);
+  /* user auth */
+  const [{ tmbId, isRoot }, { app }] = await Promise.all([
+    authCert({
+      req,
+      authToken: true
+    }),
+    // 工作流调试会执行用户传入的节点定义（包括代码节点），需要写入权限
+    authApp({ req, authToken: true, appId, per: WritePermissionVal })
+  ]);
+  // 兼容未传 chatConfig 的旧客户端；App 主表不再保存工作流配置，默认值从草稿 Version 读取。
+  const workflowChatConfig = chatConfig ?? (await getAppDraftWorkflow(appId)).chatConfig;
 
-    // auth balance
-    const { user } = await getUserChatInfoAndAuthTeamPoints(tmbId);
+  const interactive = getLastInteractiveValue(history);
+  const newUsageId = usageId
+    ? usageId
+    : await createChatUsageRecord({
+        appName: app.name,
+        appId: app._id,
+        teamId: app.teamId,
+        tmbId: tmbId,
+        source: UsageSourceEnum.fastgpt
+      });
+  const responseChatItemId = getNanoid();
+  const resources = await prepareAppWorkflowResources({
+    appId,
+    nodes,
+    chatConfig: workflowChatConfig,
+    teamId: String(app.teamId),
+    tmbId,
+    isRoot
+  });
+  const resourceContext = createWorkflowResourceContext({
+    resources,
+    teamId: String(app.teamId),
+    isRoot
+  });
+  const {
+    query: workflowQuery,
+    maxFileAmount,
+    maxBytesPerFile
+  } = await prepareWorkflowFileQuery({
+    teamId: String(app.teamId),
+    chatConfig: workflowChatConfig,
+    query
+  });
 
-    /* start process */
-    const { flowUsages, flowResponses, debugResponse } = await dispatchWorkFlow({
-      res,
-      mode: 'debug',
-      teamId,
-      tmbId,
-      user,
-      appId,
-      runtimeNodes: nodes,
-      runtimeEdges: edges,
-      variables: {
-        ...variables,
-        userChatInput: ''
-      },
-      inputFiles: [],
-      histories: [],
-      stream: false,
-      detail: true,
-      maxRunTimes: 200
-    });
+  /* start process */
+  const { debugResponse, newVariables, flatNodeResponses } = await dispatchWorkFlow({
+    res,
+    lang: getLocale(req),
+    requestOrigin: req.headers.origin,
+    mode: 'debug',
+    uid: tmbId,
+    usageId: newUsageId,
+    runningAppInfo: {
+      sourceType: ChatSourceTypeEnum.app,
+      sourceId: String(app._id),
+      name: app.name,
+      teamId: app.teamId,
+      tmbId: app.tmbId
+    },
+    runningUserInfo: await getRunningUserInfoByTmbId(tmbId),
+    chatId: debugChatId ?? getNanoid(),
+    responseChatItemId,
+    runtimeNodes: nodes,
+    runtimeEdges: edges,
+    defaultSkipNodeQueue: skipNodeQueue,
+    lastInteractive: interactive,
+    variables,
+    query: workflowQuery,
+    maxFileAmount,
+    maxBytesPerFile,
+    chatConfig: workflowChatConfig,
+    histories: history,
+    stream: false,
+    maxRunTimes: WORKFLOW_MAX_RUN_TIMES,
+    nodeResponseWriteConfig: {
+      persistToDb: false,
+      retainInMemory: true
+    },
+    resourceContext
+  });
+  const nodeResponses = composeDebugNodeResponseMap({
+    detailTree: getWorkflowFinalResponseData({
+      flatNodeResponses,
+      shouldCollect: true
+    }),
+    currentNodeResponses: debugResponse?.nodeResponses ?? {}
+  });
 
-    pushChatUsage({
-      appName: '工作流Debug',
-      appId,
-      teamId,
-      tmbId,
-      source: UsageSourceEnum.fastgpt,
-      flowUsages
-    });
-
-    jsonRes<PostWorkflowDebugResponse>(res, {
-      data: {
-        ...debugResponse,
-        flowResponses
-      }
-    });
-  } catch (err: any) {
-    jsonRes(res, {
-      code: 500,
-      error: err
-    });
-  }
+  return WorkflowDebugResponseSchema.parse({
+    ...debugResponse!,
+    nodeResponses,
+    newVariables,
+    usageId: newUsageId
+  });
 }
 
+export default NextAPI(handler);
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb'
+      sizeLimit: '20mb'
     },
     responseLimit: '20mb'
   }

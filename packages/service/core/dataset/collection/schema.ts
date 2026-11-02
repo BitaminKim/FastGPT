@@ -1,25 +1,20 @@
-import { connectionMongo, type Model } from '../../../common/mongo';
-const { Schema, model, models } = connectionMongo;
-import { DatasetCollectionSchemaType } from '@fastgpt/global/core/dataset/type.d';
-import { TrainingTypeMap, DatasetCollectionTypeMap } from '@fastgpt/global/core/dataset/constants';
-import { DatasetCollectionName } from '../schema';
+import { defineIndex, connectionMongo, getMongoModel } from '../../../common/mongo';
+const { Schema } = connectionMongo;
+import { type DatasetCollectionSchemaType } from '@fastgpt/global/core/dataset/type';
+import { DatasetCollectionTypeMap } from '@fastgpt/global/core/dataset/constants';
+import { ChunkSettings, DatasetCollectionName } from '../schema';
 import {
   TeamCollectionName,
   TeamMemberCollectionName
 } from '@fastgpt/global/support/user/team/constant';
 
-export const DatasetColCollectionName = 'dataset.collections';
+export const DatasetColCollectionName = 'dataset_collections';
 
 const DatasetCollectionSchema = new Schema({
   parentId: {
     type: Schema.Types.ObjectId,
     ref: DatasetColCollectionName,
     default: null
-  },
-  userId: {
-    // abandoned
-    type: Schema.Types.ObjectId,
-    ref: 'user'
   },
   teamId: {
     type: Schema.Types.ObjectId,
@@ -36,6 +31,8 @@ const DatasetCollectionSchema = new Schema({
     ref: DatasetCollectionName,
     required: true
   },
+
+  // Basic info
   type: {
     type: String,
     enum: Object.keys(DatasetCollectionTypeMap),
@@ -45,6 +42,11 @@ const DatasetCollectionSchema = new Schema({
     type: String,
     required: true
   },
+  tags: {
+    type: [],
+    default: []
+  },
+
   createTime: {
     type: Date,
     default: () => new Date()
@@ -54,59 +56,105 @@ const DatasetCollectionSchema = new Schema({
     default: () => new Date()
   },
 
-  trainingType: {
-    type: String,
-    enum: Object.keys(TrainingTypeMap),
-    required: true
-  },
-  chunkSize: {
-    type: Number,
-    required: true
-  },
-  chunkSplitter: {
-    type: String
-  },
-  qaPrompt: {
-    type: String
-  },
+  // Metadata
+  // local file collection
+  // Support both GridFS ObjectId (string) and S3 key (string)
+  fileId: String,
+  // web link collection
+  rawLink: String,
+  // Api collection
+  apiFileId: String,
+  // external collection(Abandoned)
+  externalFileId: String,
+  externalFileUrl: String, // external import url
 
-  fileId: {
-    type: Schema.Types.ObjectId,
-    ref: 'dataset.files'
-  },
-  rawLink: {
-    type: String
-  },
+  rawTextLength: Number,
+  hashRawText: String,
 
-  rawTextLength: {
-    type: Number
-  },
-  hashRawText: {
-    type: String
-  },
   metadata: {
     type: Object,
     default: {}
+  },
+
+  forbid: Boolean,
+
+  // Permission: 继承态标记（默认 true = 快照 = merge(父级有效 clbs, 自身 clbs)）
+  inheritPermission: {
+    type: Boolean,
+    default: true
+  },
+
+  // Parse settings
+  customPdfParse: Boolean,
+  apiFileParentId: String,
+
+  // Chunk settings
+  ...ChunkSettings
+});
+
+DatasetCollectionSchema.virtual('dataset', {
+  ref: DatasetCollectionName,
+  localField: 'datasetId',
+  foreignField: '_id',
+  justOne: true
+});
+
+// auth file
+defineIndex(DatasetCollectionSchema, { key: { teamId: 1, fileId: 1 } });
+
+// list collection; deep find collections
+defineIndex(DatasetCollectionSchema, {
+  key: {
+    teamId: 1,
+    datasetId: 1,
+    parentId: 1,
+    updateTime: -1
   }
 });
 
-try {
-  // auth file
-  DatasetCollectionSchema.index({ teamId: 1, fileId: 1 }, { background: true });
+// scan subtree by inherit state (permission sync / collection list)
+defineIndex(DatasetCollectionSchema, {
+  key: {
+    teamId: 1,
+    datasetId: 1,
+    parentId: 1,
+    inheritPermission: 1
+  }
+});
 
-  // list collection; deep find collections
-  DatasetCollectionSchema.index(
-    {
-      teamId: 1,
-      datasetId: 1,
-      parentId: 1,
-      updateTime: -1
-    },
-    { background: true }
-  );
-} catch (error) {
-  console.log(error);
-}
+// Tag filter
+defineIndex(DatasetCollectionSchema, {
+  key: { teamId: 1, datasetId: 1, tags: 1 }
+});
+// New format tags.tagId filter
+defineIndex(DatasetCollectionSchema, {
+  key: { teamId: 1, datasetId: 1, 'tags.tagId': 1 }
+});
+// create time filter
+defineIndex(DatasetCollectionSchema, {
+  key: { teamId: 1, datasetId: 1, createTime: 1 }
+});
 
-export const MongoDatasetCollection: Model<DatasetCollectionSchemaType> =
-  models[DatasetColCollectionName] || model(DatasetColCollectionName, DatasetCollectionSchema);
+// Get collection by external file id
+defineIndex(DatasetCollectionSchema, {
+  key: { datasetId: 1, externalFileId: 1 },
+  options: {
+    unique: true,
+    partialFilterExpression: {
+      externalFileId: { $exists: true }
+    }
+  }
+});
+
+// Clear invalid image
+defineIndex(DatasetCollectionSchema, {
+  key: {
+    teamId: 1,
+    'metadata.relatedImgId': 1
+  }
+});
+
+export const MongoDatasetCollection = getMongoModel<DatasetCollectionSchemaType>(
+  DatasetColCollectionName,
+  DatasetCollectionSchema
+);

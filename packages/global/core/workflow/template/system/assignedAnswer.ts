@@ -1,35 +1,36 @@
-import {
-  FlowNodeInputTypeEnum,
-  FlowNodeOutputTypeEnum,
-  FlowNodeTypeEnum
-} from '../../node/constant';
-import { FlowNodeTemplateType } from '../../type/index.d';
+import { FlowNodeInputTypeEnum, FlowNodeTypeEnum } from '../../node/constant';
+import { type FlowNodeTemplateType } from '../../type/node';
 import {
   WorkflowIOValueTypeEnum,
   NodeInputKeyEnum,
-  FlowNodeTemplateTypeEnum,
-  NodeOutputKeyEnum
+  FlowNodeTemplateTypeEnum
 } from '../../constants';
-import { getHandleConfig } from '../utils';
+import { i18nT } from '../../../../common/i18n/utils';
 
 export const AssignedAnswerModule: FlowNodeTemplateType = {
   id: FlowNodeTypeEnum.answerNode,
-  templateType: FlowNodeTemplateTypeEnum.textAnswer,
+  templateType: FlowNodeTemplateTypeEnum.tools,
   flowNodeType: FlowNodeTypeEnum.answerNode,
-  sourceHandle: getHandleConfig(true, true, true, true),
-  targetHandle: getHandleConfig(true, true, true, true),
-  avatar: '/imgs/workflow/reply.png',
-  name: '指定回复',
-  intro:
-    '该模块可以直接回复一段指定的内容。常用于引导、提示。非字符串内容传入时，会转成字符串进行输出。',
+  showSourceHandle: true,
+  showTargetHandle: true,
+  avatar: 'core/workflow/template/reply',
+  avatarLinear: 'core/workflow/template/replyLinear',
+  colorSchema: 'blue',
+  name: i18nT('workflow:assigned_reply'),
+  intro: i18nT('workflow:intro_assigned_reply'),
+  courseUrl: '/guide/build/workflow/nodes/reply',
+  isTool: true,
   inputs: [
     {
       key: NodeInputKeyEnum.answerText,
       renderTypeList: [FlowNodeInputTypeEnum.textarea, FlowNodeInputTypeEnum.reference],
-      valueType: WorkflowIOValueTypeEnum.string,
-      label: 'core.module.input.label.Response content',
-      description: 'core.module.input.description.Response content',
-      placeholder: 'core.module.input.description.Response content'
+      valueType: WorkflowIOValueTypeEnum.any,
+      required: true,
+      isRichText: false,
+      maxLength: 100000,
+      label: i18nT('common:core.module.input.label.Response content'),
+      description: i18nT('common:core.module.input.description.Response content'),
+      placeholder: i18nT('common:core.module.input.description.Response content')
     }
   ],
   outputs: []

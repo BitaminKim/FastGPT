@@ -1,123 +1,105 @@
-import { SystemConfigNode } from './system/systemConfig';
-import { EmptyNode } from './system/emptyNode';
-import { WorkflowStart } from './system/workflowStart';
+import { workflowBuilderTemplateIds } from './automationMeta';
 import { AiChatModule } from './system/aiChat';
-import { DatasetSearchModule } from './system/datasetSearch';
-import { DatasetConcatModule } from './system/datasetConcat';
 import { AssignedAnswerModule } from './system/assignedAnswer';
-import { ClassifyQuestionModule } from './system/classifyQuestion';
-import { ContextExtractModule } from './system/contextExtract';
-import { HttpModule468 } from './system/http468';
+import { ClassifyQuestionModule } from './system/classifyQuestion/index';
+import { ContextExtractModule } from './system/contextExtract/index';
+import { DatasetConcatModule } from './system/datasetConcat';
+import { DatasetSearchModule } from './system/datasetSearch';
+import { EmptyNode } from './system/emptyNode';
+import { HttpNode468 } from './system/http468';
+import { WorkflowStart } from './system/workflowStart';
 
-import { ToolModule } from './system/tools';
 import { StopToolNode } from './system/stopTool';
+import { ToolCallNode } from './system/toolCall';
+import { AgentNode } from './system/agent';
 
-import { RunAppModule } from './system/runApp';
+import { RunAppModule } from './system/abandoned/runApp/index';
 import { PluginInputModule } from './system/pluginInput';
 import { PluginOutputModule } from './system/pluginOutput';
+import { AiQueryExtension } from './system/abandoned/queryExtension';
+import { RunAppNode } from './system/runApp';
 import { RunPluginModule } from './system/runPlugin';
-import { AiQueryExtension } from './system/queryExtension';
 
-import type { FlowNodeTemplateType, nodeTemplateListType } from '../type';
-import { FlowNodeTemplateTypeEnum } from '../../workflow/constants';
-import { lafModule } from './system/laf';
-import { ifElseNode } from './system/ifElse/index';
+import type { FlowNodeTemplateType } from '../type/node';
+import { CustomFeedbackNode } from './system/customFeedback';
+import { IfElseNode } from './system/ifElse/index';
+import { FormInputNode } from './system/interactive/formInput';
+import { UserSelectNode } from './system/interactive/userSelect';
+import { LoopNode } from './system/abandoned/loop/index';
+import { LoopEndNode } from './system/loop/loopEnd';
+import { LoopStartNode } from './system/loop/loopStart';
+import { LoopRunNode } from './system/loopRun/loopRun';
+import { LoopRunStartNode } from './system/loopRun/loopRunStart';
+import { LoopRunBreakNode } from './system/loopRun/loopRunBreak';
+import { ParallelRunNode } from './system/parallelRun/parallelRun';
+import { ReadFilesNode } from './system/readFiles';
+import { RunToolNode } from './system/runTool';
+import { RunToolSetNode } from './system/runToolSet';
+import { CodeNode } from './system/sandbox';
+import { TextEditorNode } from './system/textEditor';
+import { ToolParamsNode } from './system/toolParams';
+import { VariableUpdateNode } from './system/variableUpdate';
 
-/* app flow module templates */
-export const appSystemModuleTemplates: FlowNodeTemplateType[] = [
-  SystemConfigNode,
-  WorkflowStart,
+const systemNodes: FlowNodeTemplateType[] = [
   AiChatModule,
+  TextEditorNode,
   AssignedAnswerModule,
   DatasetSearchModule,
-  DatasetConcatModule,
-  RunAppModule,
-  ToolModule,
-  StopToolNode,
   ClassifyQuestionModule,
   ContextExtractModule,
-  HttpModule468,
-  AiQueryExtension,
-  lafModule,
-  ifElseNode
+  DatasetConcatModule,
+  ToolCallNode,
+  ToolParamsNode,
+  StopToolNode,
+  AgentNode,
+  ReadFilesNode,
+  HttpNode468,
+  IfElseNode,
+  VariableUpdateNode,
+  CodeNode,
+  ParallelRunNode,
+  LoopRunNode,
+  LoopRunBreakNode
+];
+/* app flow module templates */
+export const appSystemModuleTemplates: FlowNodeTemplateType[] = [
+  WorkflowStart,
+  ...systemNodes,
+  CustomFeedbackNode,
+  UserSelectNode,
+  FormInputNode
 ];
 /* plugin flow module templates */
 export const pluginSystemModuleTemplates: FlowNodeTemplateType[] = [
   PluginInputModule,
   PluginOutputModule,
-  AiChatModule,
-  AssignedAnswerModule,
-  DatasetSearchModule,
-  DatasetConcatModule,
-  RunAppModule,
-  ToolModule,
-  StopToolNode,
-  ClassifyQuestionModule,
-  ContextExtractModule,
-  HttpModule468,
-  AiQueryExtension,
-  lafModule,
-  ifElseNode
+  ...systemNodes
 ];
 
 /* all module */
 export const moduleTemplatesFlat: FlowNodeTemplateType[] = [
+  ...appSystemModuleTemplates.concat(
+    pluginSystemModuleTemplates.filter(
+      (item) => !appSystemModuleTemplates.find((app) => app.id === item.id)
+    )
+  ),
   EmptyNode,
-  SystemConfigNode,
-  WorkflowStart,
-  AiChatModule,
-  DatasetSearchModule,
-  DatasetConcatModule,
-  AssignedAnswerModule,
-  ClassifyQuestionModule,
-  ContextExtractModule,
-  HttpModule468,
-  ToolModule,
-  StopToolNode,
-  AiChatModule,
-  RunAppModule,
-  PluginInputModule,
-  PluginOutputModule,
   RunPluginModule,
-  AiQueryExtension,
-  lafModule,
-  ifElseNode
+  RunAppNode,
+  RunAppModule,
+  LoopNode,
+  LoopStartNode,
+  LoopEndNode,
+  LoopRunStartNode,
+  RunToolNode,
+  RunToolSetNode,
+  AiQueryExtension
 ];
 
-export const moduleTemplatesList: nodeTemplateListType = [
-  {
-    type: FlowNodeTemplateTypeEnum.systemInput,
-    label: 'core.module.template.System input module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.textAnswer,
-    label: 'core.module.template.Response module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.functionCall,
-    label: 'core.module.template.Function module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.tools,
-    label: 'core.module.template.Tool module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.externalCall,
-    label: 'core.module.template.External module',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.personalPlugin,
-    label: '',
-    list: []
-  },
-  {
-    type: FlowNodeTemplateTypeEnum.other,
-    label: '其他',
-    list: []
-  }
-];
+/** Builder 复用现有系统模板清单，保留已发布的模板标识、顺序及内部容器节点。 */
+export const workflowBuilderSystemTemplates = Object.entries(workflowBuilderTemplateIds).map(
+  ([flowNodeType, templateRef]) => ({
+    templateId: templateRef.slice('builtin:'.length),
+    template: moduleTemplatesFlat.find((template) => template.flowNodeType === flowNodeType)!
+  })
+);

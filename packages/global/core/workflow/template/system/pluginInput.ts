@@ -1,19 +1,21 @@
+import { i18nT } from '../../../../common/i18n/utils';
 import { FlowNodeTemplateTypeEnum } from '../../constants';
 import { FlowNodeTypeEnum } from '../../node/constant';
-import { FlowNodeTemplateType } from '../../type';
-import { getHandleConfig } from '../utils';
+import { type FlowNodeTemplateType } from '../../type/node';
 
 export const PluginInputModule: FlowNodeTemplateType = {
   id: FlowNodeTypeEnum.pluginInput,
   templateType: FlowNodeTemplateTypeEnum.systemInput,
   flowNodeType: FlowNodeTypeEnum.pluginInput,
-  sourceHandle: getHandleConfig(false, true, false, false),
-  targetHandle: getHandleConfig(false, false, false, false),
+  showSourceHandle: true,
+  showTargetHandle: false,
   unique: true,
   forbidDelete: true,
-  avatar: '/imgs/workflow/input.png',
-  name: '定义插件输入',
-  intro: '自定义配置外部输入，使用插件时，仅暴露自定义配置的输入',
+  avatar: 'core/workflow/template/workflowStart',
+  avatarLinear: 'core/workflow/template/workflowStartLinear',
+  colorSchema: 'blue',
+  name: i18nT('workflow:plugin_input'),
+  intro: i18nT('workflow:intro_plugin_input'),
   showStatus: false,
   inputs: [],
   outputs: []
